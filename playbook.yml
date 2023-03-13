@@ -5,6 +5,7 @@
   become_method: sudo
   roles:
     - alertmanager
+  tags: [ 'never', 'alertmanager' ]
 
 - hosts: node_exporter
   become: yes
@@ -12,6 +13,7 @@
   become_method: sudo
   roles:
     - prometheus_node_exporter
+  tags: [ 'never', 'prometheus_node_exporter' ]
 
 - hosts: prometheus
   become: yes
@@ -19,6 +21,7 @@
   become_method: sudo
   roles:
     - prometheus
+  tags: [ 'never', 'prometheus' ]
 
 - hosts: grafana
   become: yes
@@ -26,3 +29,4 @@
   become_method: sudo
   roles:
     - grafana
+  tags: [ 'never', 'grafana' ]

@@ -1,0 +1,11 @@
+[prometheus]
+test-vm ansible_host=192.168.43.148 ansible_user=tino
+
+[node_exporter]
+test-vm ansible_host=192.168.43.148 ansible_user=tino
+
+[alertmanager]
+test-vm ansible_host=192.168.43.148 ansible_user=tino
+
+[grafana]
+test-vm ansible_host=192.168.43.148 ansible_user=tino

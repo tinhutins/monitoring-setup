@@ -1,7 +1,39 @@
-- name: Install grafana
-  yum:
-    name: https://s3-us-west-2.amazonaws.com/grafana-releases/release/grafana-{{ version }}-1.x86_64.rpm
-    state: latest
+#add needed packages
+- name: Install packages
+  apt:
+    name: "{{ packages }}"
+    state: present
+
+- name: Add an apt grafana signing key
+  ansible.builtin.apt_key:
+    url: https://apt.grafana.com/gpg.key
+    state: present
+    keyring: /usr/share/keyrings/grafana.key
+  when: ansible_os_family == "Debian"
+
+- name: Register debian destribution
+  shell: lsb_release -cs
+  register: lsb_release
+  when: ansible_os_family == "Debian"
+
+- name: Register debian arhitecture
+  shell: dpkg --print-architecture
+  register: arch
+  when: ansible_os_family == "Debian"
+
+
+- name: Add repository for grafana
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main"
+    state: present
+
+#Install the latest Grafana Enterprise release:
+- name: Install grafana latest
+  apt:
+    name:
+      - grafana-enterprise=9.4.3
+    state:  present
+    update_cache: yes
 
 - name: "Grafana configuration file copy"
   template:
@@ -15,8 +47,10 @@
     enabled: true
     state: started
 
-- name: "Check if Grafana is accessible."
+- name: "Check if Grafana is accessible"
   uri:
-    url: http://127.0.0.1:3000
+    url: http://{{hostvars[item].ansible_host}}:3000
     method: GET
     status_code: 200
+  with_items: 
+    - "{{ groups.grafana }}"
