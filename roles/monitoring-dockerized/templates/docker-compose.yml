@@ -1,0 +1,106 @@
+version: '3'
+
+volumes:
+  victoriametrics-storage:
+
+services:
+  clustermonitor-node-exporter:
+    container_name: clustermonitor-node-exporter
+    image: prom/node-exporter:v1.3.1
+    ports:
+      - 9100:9100
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  clustermonitor-cloudwatch-exporter:
+    container_name: clustermonitor-cloudwatch-exporter
+    image: prom/cloudwatch-exporter:v0.15.0
+    ports:
+      - 9106:9106
+    volumes:
+      - ./cloudwatch-exporter/cloudwatch-us-east-1.yml:/etc/cloudwatch-exporter/cloudwatch-us-east-1.yml
+    command:
+      - '/etc/cloudwatch-exporter/cloudwatch-us-east-1.yml'
+    environment:
+      - AWS_ACCESS_KEY_ID=AKIAWDGQZK2LFORQRNZ3
+      - AWS_SECRET_ACCESS_KEY= {{ aws_iam_monitoring_secret_key }}
+    restart: unless-stopped
+
+  clustermonitor-victoriametrics:
+    container_name: clustermonitor-victoriametrics
+    image: victoriametrics/victoria-metrics:v1.70.0
+    ports:
+      - 8428:8428
+    command:
+      - '--storageDataPath=/storage'
+      - '--retentionPeriod=7d'
+      - '--dedup.minScrapeInterval=15s'
+    volumes:
+      - victoriametrics-storage:/storage:rw
+    restart: always
+
+  clustermonitor-alertmanager:
+    container_name: clustermonitor-alertmanager
+    image: prom/alertmanager:v0.23.0
+    ports:
+      - 9093:9093
+      - 9094:9094
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alertmanager_templates:/etc/alertmanager/alertmanager_templates
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--web.external-url=https://{{alertmanger_url}}'
+    restart: always
+
+  clustermonitor-prometheus:
+    container_name: clustermonitor-prometheus
+    depends_on:
+      - clustermonitor-victoriametrics
+      - clustermonitor-alertmanager
+    image: prom/prometheus:v2.31.0
+    ports:
+      - 9090:9090
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./web.yml:/etc/prometheus/web.yml
+      - ./targets:/etc/prometheus/targets
+      - ./alerting_rules:/etc/prometheus/rules
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.config.file=/etc/prometheus/web.yml'
+      - '--storage.tsdb.retention.time=1d'
+      - '--web.external-url=https://{{prometheus_url}}'
+    restart: always
+
+  clustermonitor-grafana:
+    container_name: clustermonitor-grafana
+    depends_on:
+      - clustermonitor-prometheus
+    image: grafana/grafana:8.2.5
+    ports:
+      - 3000:3000
+    volumes:
+      - ./grafana.ini:/etc/grafana/grafana.ini
+      - ./provisioning/datasources/:/etc/grafana/provisioning/datasources
+      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards
+    restart: always
+
+  clustermonitor-nginx: 
+    container_name: clustermonitor-nginx
+    image: nginx:1.21.4-alpine
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl/:/etc/nginx/ssl/
+    restart: always

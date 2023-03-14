@@ -43,8 +43,10 @@
     state: started
     enabled: yes
 
-- name: Check if node exporter emits metrices
+- name: "Check if node_exporter is accessible"
   uri:
-    url: http://127.0.0.1:9100/metrics
+    url: http://{{hostvars[item].ansible_host}}:9100/metrics
     method: GET
     status_code: 200
+  with_items: 
+    - "{{ groups.node_exporter }}"
