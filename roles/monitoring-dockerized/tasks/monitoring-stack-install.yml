@@ -1,0 +1,270 @@
+---
+- name: Add an Apt Docker signing key
+  ansible.builtin.apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+    keyring: /usr/share/keyrings/docker-archive-keyring.gpg
+  when: ansible_os_family == "Debian"
+
+- name: Register Debian Destribution
+  shell: lsb_release -cs
+  register: lsb_release
+  when: ansible_os_family == "Debian"
+
+- name: Register Debian Arhitecture
+  shell: dpkg --print-architecture
+  register: arch
+  when: ansible_os_family == "Debian"
+
+- name: Add specified repository into sources list
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ arch.stdout }} signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu {{ lsb_release.stdout }} stable"
+    state: present
+    filename: docker
+  when: ansible_os_family == "Debian"
+
+- name: Get running containers
+  docker_host_info:
+    containers: yes
+  register: docker_info
+
+- name: Destroy stopped containers
+  docker_container:
+    name: "{{ item }}"
+    state: absent
+  loop: "{{ docker_info.containers | map(attribute='Id') | list }}"
+
+- name: Remove docker if already exist
+  apt:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - 'docker-ce'
+    - 'docker-ce-cli'
+    - 'docker-scan-plugin'
+    - 'docker'
+
+- name: Remove docker  files if they exist
+  file:
+    name: "{{ item }}"
+    state: absent
+  loop:
+    - '/var/lib/docker'
+    - '/var/run/docker.sock'
+    - '/usr/bin/docker-compose'
+  
+- name: Create docker directory if does not exist
+  file:
+    path: /var/lib/docker
+    state: directory
+    mode: '0755'
+
+# Reboot after docker is removed
+- name: Reboot host
+  reboot:
+    connect_timeout: "{{ reboot_connect_timeout }}"
+    post_reboot_delay: "{{ reboot_post_reboot_delay }}"
+    reboot_timeout: "{{ reboot_timeout }}"
+
+- name: Install docker-compose
+  get_url:
+    url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-Linux-x86_64"
+    dest: /usr/bin/docker-compose
+    mode: '0744'
+  when: ansible_os_family == "Debian"
+
+- name: Install docker
+  apt:
+    name: "{{ docker_ce_version }}"
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Create Monitoring directory if it does not exist
+  ansible.builtin.file:
+    path: /root/monitoring
+    state: directory
+    mode: '0755'
+
+- name: Create targets directory if it does not exist
+  ansible.builtin.file:
+    path: /root/monitoring/targets
+    state: directory
+    mode: '0755'
+
+- name: Copy monitoring config files
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/root/monitoring/{{ item }}.yml"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  loop:
+    - docker-compose
+    - prometheus
+    - web
+  tags: prometheus_changed
+
+#Grafana
+- name: Copy monitoring files
+  copy:
+    src: "{{ item }}"
+    dest: "/root/monitoring/{{ item }}"
+    owner: root 
+    group: root
+    mode: u=rw,g=rw,o=r
+  loop:
+    - "provisioning/"
+  tags: dashboards_changed
+
+- name: Copy grafana configuration
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/root/monitoring/{{ item }}"
+    owner: root 
+    group: root
+    mode: u=rw,g=rw,o=r
+  loop:
+    - "grafana.ini"
+  tags: dashboards_changed  
+
+- name: Make sure /provisioning/datasources dir exists
+  ansible.builtin.file:
+    path: /root/monitoring/provisioning/datasources
+    state: directory
+    owner: root
+    group: root
+    mode: u=rwx,g=rwx,o=rwx
+  tags: dashboards_changed
+
+- name: Copy datesource.yaml from template
+  ansible.builtin.template:
+    src: datasource.j2
+    dest: "/root/monitoring/provisioning/datasources/datasource.yaml"
+    owner: root
+    group: root
+    mode: u=rwx,g=rwx,o=rwx
+  tags: dashboards_changed
+  
+#alertmanager
+
+- name: Create an alertmanager_templates directory
+  ansible.builtin.file:
+    path: /root/monitoring/alertmanager_templates
+    state: directory
+    mode: '0755'
+  tags: alerts_changed
+
+- name: Copy alertmanager_templates with owner and permissions
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: /root/monitoring/alertmanager_templates/
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "alertmanager_templates/"
+  tags: alerts_changed
+
+- name: Copy alert config files
+  ansible.builtin.template:
+    src: "alertmanager.j2"
+    dest: "/root/monitoring/alertmanager.yml"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  tags: alerts_changed
+
+- name: Copy alertmanger target file
+  ansible.builtin.copy:
+    src: "clustermonitor-alertmanager-target.yml"
+    dest: "/root/monitoring/targets/clustermonitor-alertmanager-target.yml"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  tags: alerts_changed
+
+- name: Create alering_rules directory if it does not exist
+  ansible.builtin.file:
+    path: /root/monitoring/alerting_rules
+    state: directory
+    mode: '0755'
+  tags: alerts_changed
+
+- name: Copy alertmanager rules files with wildcard matching.
+  copy:
+    src: "alerting_rules"
+    dest: "/root/monitoring/"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  tags: alerts_changed
+
+#nginx
+- name: Create nginx and ssl directory if it does not exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /root/monitoring/nginx/
+    - /root/monitoring/nginx/ssl
+
+- name: copy nginx.conf from template
+  ansible.builtin.template:
+    src: "nginx.j2"
+    dest: "/root/monitoring/nginx/nginx.conf"
+    owner: root
+    group: root
+    mode: u=rw,g=r,o=r
+  tags: monitoring_nginx_conf_changed
+
+- name: copy cert files from ansible-vault
+  copy:
+    content: "{{ item.content}}"
+    dest: "/root/monitoring/nginx/ssl/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "u=rw,g=r,o="
+  loop:
+    - "{{ cloudflare_certificate }}"
+  tags: monitoring_ssl
+
+- name: copy cert key files from ansible-vault 
+  copy:
+    content: "{{ item.content}}"
+    dest: "/root/monitoring/nginx/ssl/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "u=rw,g=r,o="
+  loop:
+    - "{{ cloudflare_certificate_key }}"
+  tags: monitrong_ssl
+
+docker-compose
+- name: Install pip3
+  package:
+    name:
+      - python3-pip
+    state: latest
+
+- name: Install and upgrade pip
+  pip:
+    name:
+      - docker==5.0.3
+      - PyYAML==6.0
+      - docker-compose==1.25.0
+    executable: pip3
+
+- name: Delete existing monitoring services if exist
+  community.docker.docker_compose:
+    project_src: /root/monitoring
+    state: absent
+
+- name: Create and start monitoring services
+  community.docker.docker_compose:
+    project_src: /root/monitoring
+  register: output
+
+- ansible.builtin.debug:
+    var: output

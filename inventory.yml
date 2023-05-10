@@ -9,3 +9,8 @@ test-vm ansible_host=192.168.43.148 ansible_user=tino
 
 [grafana]
 test-vm ansible_host=192.168.43.148 ansible_user=tino
+
+[monitoring:children]
+prometheus
+alertmanager
+grafana

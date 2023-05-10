@@ -1,2 +1,12 @@
 ---
 # vars file for monitoring-dockerized
+reboot_connect_timeout: 5
+reboot_post_reboot_delay: 15
+reboot_timeout: 600
+
+docker_ce_version: docker-ce=5:23.0.1-1~ubuntu.22.04~jammy
+docker_compose_version: v2.16.0
+
+prometheus_url: prometheus.test.com
+alertmanger_url: alertmanager.test.com
+grafana_url: grafana.test.com
