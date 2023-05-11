@@ -6,7 +6,22 @@ reboot_timeout: 600
 
 docker_ce_version: docker-ce=5:23.0.1-1~ubuntu.22.04~jammy
 docker_compose_version: v2.16.0
+docker_nginx_version: 1.23.2
+docker_node_exporter_version: v1.5.0
+docker_cadvisor_version: v0.47.0
+docker_victoria_metrics_version: v1.87.4
+docker_alertmanager_version: v0.25.0
+docker_prometheus_version: v2.43.0
+docker_grafana_version: 9.4.7
 
-prometheus_url: prometheus.test.com
-alertmanger_url: alertmanager.test.com
-grafana_url: grafana.test.com
+# To which email acc you want alertmanager sends emails to
+alertmanager_send_to: tinoblue17@gmail.com
+# From which email acc you want alertmanager sends emails to
+alertmanager_send_from: alerts@gmail.com
+# Which smtp server you want alertmanager to use
+alertmanager_smtp_server: smtp.gmail.com:465
+
+prometheus_url: prometheus.tinotest.com
+alertmanger_url: alertmanager.tinotest.com
+grafana_url: grafana.tinotest.com
+

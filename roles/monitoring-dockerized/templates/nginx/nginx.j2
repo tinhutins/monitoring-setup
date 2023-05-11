@@ -86,22 +86,22 @@ http {
   server {
     listen 443 ssl;
     server_name {{prometheus_url}};
-    ssl_certificate     /etc/nginx/ssl/cloudflare-cert-file.crt;
-    ssl_certificate_key /etc/nginx/ssl/cloudflare-key-file.pem;
+    ssl_certificate     /etc/nginx/ssl/tino-crt.crt;
+    ssl_certificate_key /etc/nginx/ssl/tino-key-file.pem;
 
     location / {
-      proxy_pass http://{{private_ip_address}}:9090;
+      proxy_pass http://{{ansible_host}}:9090;
     }
   }
 
   server {
     listen 443 ssl;
     server_name {{grafana_url}};
-    ssl_certificate     /etc/nginx/ssl/cloudflare-cert-file.crt;
-    ssl_certificate_key /etc/nginx/ssl/cloudflare-key-file.pem;
+    ssl_certificate     /etc/nginx/ssl/tino-crt.crt;
+    ssl_certificate_key /etc/nginx/ssl/tino-key-file.pem;
 
     location / {
-      proxy_pass http://{{private_ip_address}}:3000;
+      proxy_pass http://{{ansible_host}}:3000;
     }
   }
 
@@ -109,11 +109,11 @@ http {
   server {
     listen 443 ssl;
     server_name {{alertmanger_url}};
-    ssl_certificate     /etc/nginx/ssl/cloudflare-cert-file.crt;
-    ssl_certificate_key /etc/nginx/ssl/cloudflare-key-file.pem;
+    ssl_certificate     /etc/nginx/ssl/tino-crt.crt;
+    ssl_certificate_key /etc/nginx/ssl/tino-key-file.pem;
   
     location / {
-      proxy_pass http://{{private_ip_address}}:9093;
+      proxy_pass http://{{ansible_host}}:9093;
     }
   }
 

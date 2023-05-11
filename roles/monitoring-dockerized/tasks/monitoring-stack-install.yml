@@ -23,6 +23,20 @@
     filename: docker
   when: ansible_os_family == "Debian"
 
+- name: Install pip3
+  package:
+    name:
+      - python3-pip
+    state: latest
+
+- name: Install or upgrade pip packages
+  pip:
+    name:
+      - docker==6.0.1
+      - docker-compose==1.29.2
+      - pyyaml==5.4.1
+    executable: pip3
+
 - name: Get running containers
   docker_host_info:
     containers: yes
@@ -34,17 +48,18 @@
     state: absent
   loop: "{{ docker_info.containers | map(attribute='Id') | list }}"
 
-- name: Remove docker if already exist
+- name: Remove docker packages if already installed
   apt:
-    name: "{{ item }}"
+    name: "docker*"
     state: absent
-  loop:
-    - 'docker-ce'
-    - 'docker-ce-cli'
-    - 'docker-scan-plugin'
-    - 'docker'
 
-- name: Remove docker  files if they exist
+- name: Remove podman packages if already installed
+  apt:
+    name: "podman*"
+    state: absent
+  ignore_errors: True
+
+- name: Remove docker files if they exist
   file:
     name: "{{ item }}"
     state: absent
@@ -52,12 +67,6 @@
     - '/var/lib/docker'
     - '/var/run/docker.sock'
     - '/usr/bin/docker-compose'
-  
-- name: Create docker directory if does not exist
-  file:
-    path: /var/lib/docker
-    state: directory
-    mode: '0755'
 
 # Reboot after docker is removed
 - name: Reboot host
@@ -65,13 +74,12 @@
     connect_timeout: "{{ reboot_connect_timeout }}"
     post_reboot_delay: "{{ reboot_post_reboot_delay }}"
     reboot_timeout: "{{ reboot_timeout }}"
-
-- name: Install docker-compose
-  get_url:
-    url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-Linux-x86_64"
-    dest: /usr/bin/docker-compose
-    mode: '0744'
-  when: ansible_os_family == "Debian"
+  
+- name: Create docker directory if does not exist
+  file:
+    path: /var/lib/docker
+    state: directory
+    mode: '0755'
 
 - name: Install docker
   apt:
@@ -80,19 +88,20 @@
     update_cache: yes
   when: ansible_os_family == "Debian"
 
-- name: Create Monitoring directory if it does not exist
-  ansible.builtin.file:
+- name: Install docker-compose
+  get_url:
+    url: "https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-Linux-x86_64"
+    dest: /usr/bin/docker-compose
+    mode: '0744'
+  when: ansible_os_family == "Debian"
+  
+- name: Create monitoring dir if does not exist
+  file:
     path: /root/monitoring
     state: directory
     mode: '0755'
 
-- name: Create targets directory if it does not exist
-  ansible.builtin.file:
-    path: /root/monitoring/targets
-    state: directory
-    mode: '0755'
-
-- name: Copy monitoring config files
+- name: Copy docker-compose config files
   ansible.builtin.template:
     src: "{{ item }}.j2"
     dest: "/root/monitoring/{{ item }}.yml"
@@ -101,104 +110,52 @@
     mode: u=rw,g=rw,o=r
   loop:
     - docker-compose
-    - prometheus
-    - web
-  tags: prometheus_changed
 
 #Grafana
-- name: Copy monitoring files
+- name: Create grafana directory if it does not exist
+  ansible.builtin.file:
+    path: /root/monitoring/grafana
+    state: directory
+    mode: '0755'
+
+- name: Copy grafana monitoring files
   copy:
-    src: "{{ item }}"
-    dest: "/root/monitoring/{{ item }}"
+    src: "grafana/{{ item }}"
+    dest: "/root/monitoring/grafana/{{ item }}"
     owner: root 
     group: root
     mode: u=rw,g=rw,o=r
   loop:
-    - "provisioning/"
+    - "dashboards/"
   tags: dashboards_changed
 
-- name: Copy grafana configuration
+- name: Copy grafana.ini template
   ansible.builtin.template:
-    src: "{{ item }}.j2"
-    dest: "/root/monitoring/{{ item }}"
-    owner: root 
+    src: "grafana/grafana.ini.j2"
+    dest: "/root/monitoring/grafana/grafana.ini"
+    owner: root
     group: root
     mode: u=rw,g=rw,o=r
-  loop:
-    - "grafana.ini"
-  tags: dashboards_changed  
+  tags: grafana_ini
 
-- name: Make sure /provisioning/datasources dir exists
+- name: Create grafana directory structure
   ansible.builtin.file:
-    path: /root/monitoring/provisioning/datasources
+    path: "{{ item }}"
     state: directory
+    mode: '0755'
+  loop:
+    - /root/monitoring/grafana/datasources
+    - /root/monitoring/grafana/dashboards
+  tags: dashboards_changed
+
+- name: Copy datasource.yaml from template
+  ansible.builtin.template:
+    src: grafana/datasource.j2
+    dest: "/root/monitoring/grafana/datasources/datasource.yaml"
     owner: root
     group: root
     mode: u=rwx,g=rwx,o=rwx
   tags: dashboards_changed
-
-- name: Copy datesource.yaml from template
-  ansible.builtin.template:
-    src: datasource.j2
-    dest: "/root/monitoring/provisioning/datasources/datasource.yaml"
-    owner: root
-    group: root
-    mode: u=rwx,g=rwx,o=rwx
-  tags: dashboards_changed
-  
-#alertmanager
-
-- name: Create an alertmanager_templates directory
-  ansible.builtin.file:
-    path: /root/monitoring/alertmanager_templates
-    state: directory
-    mode: '0755'
-  tags: alerts_changed
-
-- name: Copy alertmanager_templates with owner and permissions
-  ansible.builtin.copy:
-    src: "{{ item }}"
-    dest: /root/monitoring/alertmanager_templates/
-    owner: root
-    group: root
-    mode: '0755'
-  loop:
-    - "alertmanager_templates/"
-  tags: alerts_changed
-
-- name: Copy alert config files
-  ansible.builtin.template:
-    src: "alertmanager.j2"
-    dest: "/root/monitoring/alertmanager.yml"
-    owner: root
-    group: root
-    mode: u=rw,g=rw,o=r
-  tags: alerts_changed
-
-- name: Copy alertmanger target file
-  ansible.builtin.copy:
-    src: "clustermonitor-alertmanager-target.yml"
-    dest: "/root/monitoring/targets/clustermonitor-alertmanager-target.yml"
-    owner: root
-    group: root
-    mode: u=rw,g=rw,o=r
-  tags: alerts_changed
-
-- name: Create alering_rules directory if it does not exist
-  ansible.builtin.file:
-    path: /root/monitoring/alerting_rules
-    state: directory
-    mode: '0755'
-  tags: alerts_changed
-
-- name: Copy alertmanager rules files with wildcard matching.
-  copy:
-    src: "alerting_rules"
-    dest: "/root/monitoring/"
-    owner: root
-    group: root
-    mode: u=rw,g=rw,o=r
-  tags: alerts_changed
 
 #nginx
 - name: Create nginx and ssl directory if it does not exist
@@ -212,7 +169,7 @@
 
 - name: copy nginx.conf from template
   ansible.builtin.template:
-    src: "nginx.j2"
+    src: "nginx/nginx.j2"
     dest: "/root/monitoring/nginx/nginx.conf"
     owner: root
     group: root
@@ -227,7 +184,7 @@
     group: root
     mode: "u=rw,g=r,o="
   loop:
-    - "{{ cloudflare_certificate }}"
+    - "{{ tino_certificate }}"
   tags: monitoring_ssl
 
 - name: copy cert key files from ansible-vault 
@@ -238,33 +195,108 @@
     group: root
     mode: "u=rw,g=r,o="
   loop:
-    - "{{ cloudflare_certificate_key }}"
-  tags: monitrong_ssl
+    - "{{ tino_certificate_key }}"
+  tags: monitoring_ssl
 
-docker-compose
-- name: Install pip3
-  package:
-    name:
-      - python3-pip
-    state: latest
+#alertmanager and prometheus
+- name: Create prometheus directory structure
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /root/monitoring/prometheus
+    - /root/monitoring/prometheus/targets
+  tags: prometheus_changed
+    
+- name: Copy prometheus config files
+  ansible.builtin.template:
+    src: "prometheus/{{ item }}.j2"
+    dest: "/root/monitoring/prometheus/{{ item }}.yml"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  loop:
+    - prometheus
+  tags: prometheus_changed
 
-- name: Install and upgrade pip
-  pip:
-    name:
-      - docker==5.0.3
-      - PyYAML==6.0
-      - docker-compose==1.25.0
-    executable: pip3
+- name: Create an alertmanager templates directory
+  ansible.builtin.file:
+    path: /root/monitoring/alertmanager/templates
+    state: directory
+    mode: '0755'
+  tags: alerts_changed
 
+- name: Copy templates with owner and permissions
+  ansible.builtin.copy:
+    src: "alertmanager/mail/{{ item }}"
+    dest: /root/monitoring/alertmanager/templates/
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "email.tmpl"
+    - "email.firing.html.tmpl"
+    - "email.resolved.html.tmpl"
+  tags: alerts_changed
+
+- name: Copy alert config files
+  ansible.builtin.template:
+    src: "alertmanager/alertmanager.j2"
+    dest: "/root/monitoring/alertmanager/alertmanager.yml"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  tags: alerts_changed
+
+- name: Copy alertmanager running on monitoring server target file to prometheus
+  ansible.builtin.copy:
+    src: "monitoring-alertmanager-target.yml"
+    dest: "/root/monitoring/prometheus/targets/monitoring-alertmanager-target.yml"
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+  tags: alerts_changed
+
+- name: Create rules prometheus directory if it does not exist
+  ansible.builtin.file:
+    path: /root/monitoring/prometheus/rules/
+    state: directory
+    mode: '0755'
+  tags: alerts_changed
+
+- name: Copy alertmanager rules files with wildcard matching
+  ansible.builtin.copy:
+    src: "alertmanager/{{ item }}"
+    dest: /root/monitoring/prometheus/rules
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "rules/"
+  tags: alerts_changed
+
+#run monitoring stack with docker-compose
 - name: Delete existing monitoring services if exist
   community.docker.docker_compose:
-    project_src: /root/monitoring
+    project_src: /root/monitoring/
     state: absent
 
 - name: Create and start monitoring services
   community.docker.docker_compose:
-    project_src: /root/monitoring
+    project_src: /root/monitoring/
   register: output
 
 - ansible.builtin.debug:
     var: output
+
+- name: Restart all services
+  community.docker.docker_compose:
+    project_src: /root/monitoring/
+    build: no
+    services:
+      - monitoring-prometheus
+      - monitoring-alertmanager
+      - monitoring-grafana
+    restarted: yes
+  tags: [ 'never', 'alerts_changed', 'dashboards_changed', 'prometheus_changed' ]

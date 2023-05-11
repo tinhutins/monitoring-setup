@@ -1,0 +1,5 @@
+---
+- targets:
+  - 'monitoring-alertmanager:9093'
+  labels:
+    job: alertmanager-target

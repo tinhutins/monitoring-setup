@@ -7,7 +7,7 @@
     - alertmanager
   tags: [ 'never', 'alertmanager' ]
 
-- hosts: node_exporter
+- hosts: test_machine_for_monitor
   become: yes
   become_user: root
   become_method: sudo
@@ -30,3 +30,11 @@
   roles:
     - grafana
   tags: [ 'never', 'grafana' ]
+
+- hosts: monitoring
+  become: yes
+  become_user: root
+  gather_facts: true
+  become_method: sudo
+  roles:
+    - monitoring-dockerized

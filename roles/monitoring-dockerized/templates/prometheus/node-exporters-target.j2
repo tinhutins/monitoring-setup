@@ -1,0 +1,5 @@
+---
+- targets:
+  - '{{hostvars[groups['test_machine_for_monitor'][0]].ansible_host}}:9100'
+  labels:
+    job: node-exporters-machines

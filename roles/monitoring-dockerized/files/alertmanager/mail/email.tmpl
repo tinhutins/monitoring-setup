@@ -1,0 +1,7 @@
+{{ define "email.html" }}
+    {{ if eq .Status "resolved" }}
+        {{ template "email.resolved.html" . }}
+    {{ else if eq .Status "firing" }}
+        {{ template "email.firing.html" . }}
+    {{ end }}
+{{ end }}

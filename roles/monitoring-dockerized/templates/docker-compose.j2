@@ -1,0 +1,117 @@
+version: '3'
+
+services:
+  monitoring-node-exporter:
+    container_name: monitoring-node-exporter
+    image: prom/node-exporter:v1.3.1
+    ports:
+      - 9100:9100
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    restart: unless-stopped
+
+  monitoring-cadvisor:
+    image: gcr.io/cadvisor/cadvisor:{{ docker_cadvisor_version }}
+    container_name: monitoring-cadvisor
+    volumes:
+      - type: bind
+        source: /
+        target: /rootfs
+        read_only: yes
+      - type: bind
+        source: /var/run
+        target: /var/run
+        read_only: yes
+      - type: bind
+        source: /sys
+        target: /sys
+        read_only: yes
+      - type: bind
+        source: /dev/disk/
+        target: /dev/disk/
+        read_only: yes
+    ports:
+      - 8090:8080
+    command:
+    - "--enable_metrics=cpu,cpuLoad,disk,diskIO,memory,oom_event,network"
+    - "--store_container_labels=false"
+    - "--docker_only=true"
+    restart: always
+
+  monitoring-victoriametrics:
+    container_name: monitoring-victoriametrics
+    image: victoriametrics/victoria-metrics:{{ docker_victoria_metrics_version }}
+    ports:
+      - 8428:8428
+    command:
+      - '--storageDataPath=/storage'
+      - '--retentionPeriod=7d'
+      - '--dedup.minScrapeInterval=15s'
+    restart: always
+
+  monitoring-alertmanager:
+    container_name: monitoring-alertmanager
+    image: prom/alertmanager:{{ docker_alertmanager_version }}
+    ports:
+      - 9093:9093
+      - 9094:9094
+    volumes:
+      - /root/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - /root/monitoring/alertmanager/templates/:/etc/alertmanager/templates
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--web.external-url=https://{{alertmanger_url}}'
+    restart: always
+
+  monitoring-prometheus:
+    container_name: monitoring-prometheus
+    depends_on:
+      - monitoring-alertmanager
+    image: prom/prometheus:{{ docker_prometheus_version }}
+    user: root
+    ports:
+      - 9090:9090
+    volumes:
+      - /root/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - /root/monitoring/prometheus/targets:/etc/prometheus/targets
+      - /root/monitoring/prometheus/rules/:/etc/prometheus/rules
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=4d'
+      - '--storage.tsdb.path=/data/prometheus'
+      - '--web.external-url=https://{{prometheus_url}}'
+    restart: always
+
+  monitoring-grafana:
+    container_name: monitoring-grafana
+    depends_on:
+      - monitoring-prometheus
+    image: grafana/grafana:{{ docker_grafana_version }}
+    ports:
+      - 3000:3000
+    volumes:
+      - /root/monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - /root/monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - /root/monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    restart: always
+
+  monitoring-nginx: 
+    container_name: monitoring-nginx
+    image: nginx:{{ docker_nginx_version }}
+    environment:
+      - TZ=Europe/Zagreb
+    ports:
+      - 80:80/tcp
+      - 443:443/tcp
+    volumes:
+      - /root/monitoring/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - /root/monitoring/nginx/ssl:/etc/nginx/ssl/
+    mem_limit: 512m
+    restart: always

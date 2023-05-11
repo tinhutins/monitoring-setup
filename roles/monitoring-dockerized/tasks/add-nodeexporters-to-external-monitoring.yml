@@ -1,0 +1,53 @@
+---
+#gather facts for node exporter targets
+- name: Gather facts
+  setup:
+  delegate_to: "{{item}}"
+  delegate_facts: True
+  with_items:
+    - "{{groups['test_machine_for_monitor']}}"
+
+#Prometheus-nodeexporter targets
+- name: Create node-exporters target file
+  template:
+    src: prometheus/node-exporters-target.j2
+    dest:  //root/monitoring/prometheus/targets/node-exporters-machines.yml
+    owner: root
+    group: root
+    mode: u=rw,g=rw,o=r
+
+- name: Add node exporters to prometheus.yml
+  blockinfile:
+    insertbefore: "remote_write:"
+    path: /root/monitoring/prometheus/prometheus.yml
+    block: |
+      # Ansible    
+        - job_name: 'node-exporters-machines'
+          honor_labels: true
+          relabel_configs:
+            - source_labels: [__address__]
+              regex:  '(.*):\d+'
+              target_label: instance
+              replacement: '${1}'
+            - source_labels: [__address__]
+              regex:  '(.*):\d+'
+              target_label: __address__
+              replacement: '${1}:9100'
+          file_sd_configs:
+          - files:
+            - '/etc/prometheus/targets/node-exporters-machines.yml'
+    marker: "# {mark} ANSIBLE MANAGED BLOCK node-exportes"
+  
+- name: Restart services
+  community.docker.docker_compose:
+    project_src: /root/monitoring
+    build: no
+    services:
+      - monitoring-prometheus
+      - monitoring-grafana
+      - monitoring-alertmanager
+    restarted: yes
+  register: output
+
+- ansible.builtin.debug:
+    var: output

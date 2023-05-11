@@ -1,5 +1,9 @@
----
-# tasks file for monitoring-dockerized
-- import_tasks: monitoring-stack-install.yml
-  tags:
-    - monitoring
+- name: Install monitoring stack
+  import_tasks: monitoring-stack-install.yml
+  when: inventory_hostname == groups['monitoring'][0]
+  tags: [ 'never', 'monitoring' ]
+
+- name: Add nodeexporters to external monitoring
+  import_tasks: add-nodeexporters-to-external-monitoring.yml
+  when: inventory_hostname == groups['monitoring'][0]
+  tags: [ 'never', 'add_nodeexporters_to_monitor' ]
